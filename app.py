@@ -1,11 +1,14 @@
-from flask import Flask
-from prometheus_flask_exporter import PrometheusMetrics
+from flask import Flask, Response
+from prometheus_client import Counter, generate_latest
 
 app = Flask(__name__)
-metrics = PrometheusMetrics(app)
+
+# Prometheus metric
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP Requests', ['method', 'endpoint'])
 
 @app.route('/')
 def dashboard():
+    REQUEST_COUNT.labels(method='GET', endpoint='/').inc()
     return '''
     <html>
         <head>
@@ -23,9 +26,9 @@ def dashboard():
     </html>
     '''
 
-@app.route('/hello')
-def hello():
-    return "Hello from Flask!"
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype='text/plain')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

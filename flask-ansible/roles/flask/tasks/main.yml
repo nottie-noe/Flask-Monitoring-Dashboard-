@@ -1,0 +1,84 @@
+- name: Install required packages
+  apt:
+    name:
+      - python3-pip
+      - git
+      - nginx
+      - python3-venv
+    update_cache: yes
+
+- name: Clone Flask app from GitHub
+  git:
+    repo: https://github.com/nottie-noe/Flask-Monitoring-Dashboard-.git
+    dest: /home/ubuntu/flask-app
+    force: yes
+    update: yes
+
+- name: Create Python virtual environment
+  command: python3 -m venv /home/ubuntu/flask-app/venv
+  args:
+    creates: /home/ubuntu/flask-app/venv
+
+- name: Install Python dependencies in virtualenv
+  pip:
+    requirements: /home/ubuntu/flask-app/requirements.txt
+    virtualenv: /home/ubuntu/flask-app/venv
+
+- name: Create systemd service for Gunicorn
+  copy:
+    dest: /etc/systemd/system/flask.service
+    content: |
+      [Unit]
+      Description=Gunicorn instance to serve Flask app
+      After=network.target
+
+      [Service]
+      User=ubuntu
+      Group=www-data
+      WorkingDirectory=/home/ubuntu/flask-app
+      Environment="PATH=/home/ubuntu/flask-app/venv/bin"
+      ExecStart=/home/ubuntu/flask-app/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 app:app
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start Gunicorn
+  systemd:
+    name: flask
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Create Nginx site config
+  copy:
+    dest: /etc/nginx/sites-available/flask
+    content: |
+      server {
+          listen 80;
+          server_name _;
+
+          location / {
+              proxy_pass http://127.0.0.1:8000;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+      }
+
+- name: Enable site and restart Nginx
+  file:
+    src: /etc/nginx/sites-available/flask
+    dest: /etc/nginx/sites-enabled/flask
+    state: link
+    force: yes
+
+- name: Remove default Nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Restart Nginx
+  service:
+    name: nginx
+    state: restarted
